@@ -43,7 +43,12 @@ import type {
 } from "../shared/contracts.ts";
 
 type View = "workbench" | "cases" | "evaluation" | "system";
-type ResultTab = "timeline" | "dynamics" | "strategies" | "trace";
+type ResultTab =
+  | "conversation"
+  | "timeline"
+  | "dynamics"
+  | "strategies"
+  | "trace";
 
 interface HealthState {
   service: string;
@@ -56,15 +61,6 @@ interface HealthState {
   };
   database: string;
 }
-
-const sampleTranscript = [
-  "我 21:10 你今天又这么晚。",
-  "对方 21:12 工作又不是我能控制的。",
-  "我 21:12 你每次都这么说。",
-  "对方 21:14 那你想我怎样？",
-  "我 21:15 我只是想你提前告诉我。",
-  "对方 21:17 算了，没什么好说的。"
-].join("\n");
 
 const goalLabels: Record<Goal, string> = {
   be_understood: "让对方理解我",
@@ -234,15 +230,13 @@ function Workbench({
   const [goal, setGoal] = useState<Goal>("deescalate");
   const [relationshipType, setRelationshipType] =
     useState<RelationshipType>("partner");
-  const [transcript, setTranscript] = useState(sampleTranscript);
   const [imageDataUrl, setImageDataUrl] = useState<string | undefined>();
   const [imageName, setImageName] = useState("");
   const [result, setResult] = useState<AnalysisResult | null>(null);
-  const [activeTab, setActiveTab] = useState<ResultTab>("timeline");
+  const [activeTab, setActiveTab] = useState<ResultTab>("conversation");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
-  const canRun =
-    transcript.trim().length >= 10 || Boolean(imageDataUrl);
+  const canRun = Boolean(imageDataUrl);
 
   useEffect(() => {
     if (!initialResult) {
@@ -251,11 +245,10 @@ function Workbench({
     setTitle(initialResult.title);
     setGoal(initialResult.goal);
     setRelationshipType(initialResult.relationshipType);
-    setTranscript(initialResult.redaction.text);
     setImageDataUrl(undefined);
     setImageName("");
     setResult(initialResult);
-    setActiveTab("timeline");
+    setActiveTab("conversation");
     setError("");
   }, [initialResult]);
 
@@ -279,12 +272,12 @@ function Workbench({
         title,
         goal,
         relationshipType,
-        transcript,
+        transcript: "",
         imageDataUrl
       };
       const output = await analyzeCase(payload);
       setResult(output);
-      setActiveTab("timeline");
+      setActiveTab("conversation");
       onCompleted(output);
     } catch (requestError) {
       setError(
@@ -296,7 +289,12 @@ function Workbench({
   };
 
   const tabs: Array<{ id: ResultTab; label: string; count?: number }> = [
-    { id: "timeline", label: "时间线", count: result?.timeline.events.length },
+    {
+      id: "conversation",
+      label: "聊天记录",
+      count: result?.timeline.events.length
+    },
+    { id: "timeline", label: "事件时间线", count: result?.timeline.events.length },
     { id: "dynamics", label: "关系动态" },
     { id: "strategies", label: "策略", count: result?.strategies.length },
     { id: "trace", label: "Agent 调用链", count: result?.trace.length }
@@ -317,7 +315,6 @@ function Workbench({
               setTitle("晚归与持续追问");
               setGoal("deescalate");
               setRelationshipType("partner");
-              setTranscript(sampleTranscript);
               setImageDataUrl(undefined);
               setImageName("");
               setResult(null);
@@ -371,18 +368,8 @@ function Workbench({
           </label>
         </div>
 
-        <label className="field transcript-field">
-          <span>对话记录</span>
-          <textarea
-            value={transcript}
-            onChange={(event) => setTranscript(event.target.value)}
-            placeholder="可留空，直接上传聊天截图"
-          />
-          <small>{transcript.length.toLocaleString()} / 50,000</small>
-        </label>
-
         <div className="field">
-          <span>聊天截图</span>
+          <span>聊天记录截图</span>
           <label className="upload-zone">
             <input
               type="file"
@@ -391,8 +378,8 @@ function Workbench({
             />
             <Upload size={19} />
             <div>
-              <strong>{imageName || "选择截图"}</strong>
-              <span>支持只上传截图；截图会发送给启用的视觉模型</span>
+              <strong>{imageName || "上传这张聊天记录"}</strong>
+              <span>无需输入文字，AI 会直接读取截图中的消息</span>
             </div>
             {imageDataUrl ? (
               <button
@@ -409,6 +396,11 @@ function Workbench({
               </button>
             ) : null}
           </label>
+          {imageDataUrl ? (
+            <div className="upload-preview">
+              <img src={imageDataUrl} alt="聊天记录截图预览" />
+            </div>
+          ) : null}
         </div>
 
         {error ? (
@@ -432,7 +424,7 @@ function Workbench({
           <ScanText size={17} />
           <div>
             <strong>五阶段处理链路</strong>
-            <span>脱敏 → 时间线 → 关系动态 → 安全判断 → 策略生成</span>
+            <span>截图识别 → 聊天回放 → 关系动态 → 安全判断 → 策略生成</span>
           </div>
         </div>
       </section>
@@ -442,7 +434,7 @@ function Workbench({
           <EmptyState
             icon={<BrainCircuit size={26} />}
             title="等待案例运行"
-            detail="运行后会展示事件时间线、关系动态、安全判断、策略候选和完整 Agent 调用链。"
+            detail="上传聊天截图后，AI 会直接重建聊天记录，并在每条消息下插入意图、需求和行动建议。"
           />
         ) : (
           <>
@@ -507,6 +499,9 @@ function Workbench({
             </div>
 
             <div className="result-content">
+              {activeTab === "conversation" ? (
+                <ConversationView result={result} />
+              ) : null}
               {activeTab === "timeline" ? (
                 <TimelineView result={result} />
               ) : null}
@@ -521,6 +516,111 @@ function Workbench({
           </>
         )}
       </section>
+    </div>
+  );
+}
+
+function getEventGuidance(
+  event: AnalysisResult["timeline"]["events"][number]
+): string {
+  if (event.signal.includes("指责")) {
+    return "先问清对方最在意的那一个具体行为，不要急着证明自己是否有道理。";
+  }
+  if (event.signal.includes("撤退")) {
+    return "停止连续追问，给出一个明确时间点，让对方知道什么时候继续沟通。";
+  }
+  if (event.signal.includes("需求表达")) {
+    return "保留这句需求，再补一个对方能够直接执行的具体请求。";
+  }
+  if (event.signal.includes("修复")) {
+    return "先承认这句话造成的影响，再说下一次准备改变什么行为。";
+  }
+  if (event.actor === "other") {
+    return "先复述你理解到的信息，再询问对方最担心或最希望改变的是什么。";
+  }
+  return "把抽象判断换成一个具体时刻、影响和可执行请求。";
+}
+
+function ConversationView({ result }: { result: AnalysisResult }) {
+  return (
+    <div className="conversation-view">
+      <div className="conversation-summary">
+        <BrainCircuit size={18} />
+        <div>
+          <strong>AI 已根据截图重建聊天记录</strong>
+          <span>
+            共识别 {result.timeline.events.length} 条消息；灰色区域是模型解读，不代表对方真实意图。
+          </span>
+        </div>
+      </div>
+
+      {result.timeline.events.map((event, index) => {
+        const side =
+          event.actor === "self"
+            ? "self"
+            : event.actor === "other"
+              ? "other"
+              : "unknown";
+        const need = result.dynamics.emotionalNeeds.find(
+          (item) => item.party === event.actor || item.party === "both"
+        );
+        const urgency =
+          event.severity >= 0.75
+            ? "高风险信号"
+            : event.severity >= 0.45
+              ? "需要留意"
+              : "普通信息";
+
+        return (
+          <div className={`chat-row ${side}`} key={event.id}>
+            <div className="chat-avatar">
+              {side === "self" ? "我" : side === "other" ? "TA" : "?"}
+            </div>
+            <div className="chat-content">
+              <div className="chat-meta">
+                <span>{side === "self" ? "我" : side === "other" ? "对方" : "未标明"}</span>
+                <span>{event.timestamp || `消息 ${index + 1}`}</span>
+              </div>
+              <div className="chat-bubble">{event.quote}</div>
+
+              <div
+                className={`inline-ai-card ${
+                  event.severity >= 0.75
+                    ? "urgent"
+                    : event.severity >= 0.45
+                      ? "attention"
+                      : ""
+                }`}
+              >
+                <div className="inline-ai-head">
+                  <BrainCircuit size={15} />
+                  <strong>AI 解读</strong>
+                  <span>{urgency}</span>
+                </div>
+                <p className="inline-ai-summary">{event.summary}</p>
+                {need ? (
+                  <p className="inline-ai-need">
+                    <span>可能的深层需求</span>
+                    {need.need}
+                  </p>
+                ) : null}
+                <div className="tag-row">
+                  {event.emotions.map((emotion) => (
+                    <span className="tag" key={emotion}>
+                      {emotion}
+                    </span>
+                  ))}
+                  <span className="tag">{event.signal}</span>
+                </div>
+                <div className="inline-ai-action">
+                  <span>建议动作</span>
+                  <p>{getEventGuidance(event)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
