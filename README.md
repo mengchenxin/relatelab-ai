@@ -1,5 +1,9 @@
 # RelateLab
 
+[Live Demo](https://relatelab-ai.onrender.com) | [GitHub Actions](https://github.com/mengchenxin/relatelab-ai/actions/workflows/ci.yml)
+
+![CI](https://github.com/mengchenxin/relatelab-ai/actions/workflows/ci.yml/badge.svg)
+
 RelateLab is an AI engineering workbench that turns relationship conversations into a structured case:
 
 ```text
