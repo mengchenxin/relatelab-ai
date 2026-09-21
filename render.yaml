@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: relatelab-ai
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 10000
+      - key: SQLITE_PATH
+        value: /tmp/relatelab.sqlite
+      - key: LLM_MODE
+        value: openai-compatible
+      - key: LLM_BASE_URL
+        value: https://api.deepseek.com
+      - key: LLM_MODEL
+        value: deepseek-flash
+      - key: LLM_SUPPORTS_VISION
+        value: "true"
+      - key: LLM_TIMEOUT_MS
+        value: 60000
+      - key: LLM_API_KEY
+        sync: false

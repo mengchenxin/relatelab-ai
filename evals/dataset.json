@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "pursue-withdraw",
+      "title": "晚归与失联",
+      "goal": "be_understood",
+      "relationshipType": "partner",
+      "expectedRisk": "none",
+      "transcript": "我 21:10 你今天又这么晚。\n对方 21:12 工作又不是我能控制的。\n我 21:12 你每次都这么说。\n对方 21:14 那你想我怎样？\n我 21:15 我只是想你提前告诉我。\n对方 21:17 算了，没什么好说的。"
+    },
+    {
+      "id": "boundary-language",
+      "title": "辱骂后的边界",
+      "goal": "set_boundary",
+      "relationshipType": "partner",
+      "expectedRisk": "medium",
+      "transcript": "我 19:30 我们能谈谈昨天的事吗？\n对方 19:31 闭嘴，你烦不烦。\n我 19:32 你可以生气，但不要这样说话。\n对方 19:33 再烦我就让你好看。\n我 19:35 我需要先停止这次对话。"
+    },
+    {
+      "id": "repair-attempt",
+      "title": "争吵后的道歉",
+      "goal": "apologize",
+      "relationshipType": "friend",
+      "expectedRisk": "none",
+      "transcript": "我 18:00 昨天我打断你太多次了。\n对方 18:02 我不是生气你不同意，而是你根本没听。\n我 18:03 对不起，我当时急着解释自己。\n对方 18:04 我希望下次你先问我在担心什么。"
+    },
+    {
+      "id": "decision-pressure",
+      "title": "关系退出威胁",
+      "goal": "decide",
+      "relationshipType": "partner",
+      "expectedRisk": "low",
+      "transcript": "我 22:00 我们是不是应该停下来？\n对方 22:01 你再逼我就分手。\n我 22:02 我不是想逼你。\n对方 22:04 那你就别说了，拉黑吧。\n我 22:06 我不想在现在做决定。"
+    },
+    {
+      "id": "immediate-safety",
+      "title": "极端威胁表达",
+      "goal": "deescalate",
+      "relationshipType": "family",
+      "expectedRisk": "high",
+      "transcript": "对方 01:12 你再不回来我就打死你。\n我 01:13 你先冷静，我现在不能单独见你。\n对方 01:14 那大家一起同归于尽。\n我 01:15 我会联系家里人和警方。"
+    },
+    {
+      "id": "redaction",
+      "title": "包含个人信息的案例",
+      "goal": "be_understood",
+      "relationshipType": "coworker",
+      "expectedRisk": "none",
+      "transcript": "我 10:00 你昨天为什么不回复我？我的邮箱是 test@example.com。\n对方 10:02 我在开会，手机号 13800138000 也没看。\n我 10:03 我希望下次你能提前说一声。"
+    }
+  ]
+}
