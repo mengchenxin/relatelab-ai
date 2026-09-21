@@ -33,7 +33,8 @@ export async function createApplication(
 
   await app.register(cors, {
     origin: true,
-    methods: ["GET", "POST", "DELETE", "OPTIONS"]
+    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "x-llm-api-key"]
   });
 
   app.get("/api/health", async () => {
@@ -45,6 +46,7 @@ export async function createApplication(
         mode: gateway.providerMode,
         model: gateway.model,
         configured: gateway.configured,
+        keyMode: gateway.keyMode,
         supportsVision: gateway.supportsVision
       },
       database: config.sqlitePath === ":memory:" ? "memory" : "sqlite",
@@ -106,7 +108,24 @@ export async function createApplication(
       });
     }
 
-    return orchestrator.analyze(parsed.data);
+    const suppliedKeyHeader = request.headers["x-llm-api-key"];
+    const suppliedApiKey =
+      typeof suppliedKeyHeader === "string" ? suppliedKeyHeader.trim() : "";
+
+    if (
+      gateway.providerMode !== "mock" &&
+      (gateway.enforceByok || !gateway.configured) &&
+      !suppliedApiKey
+    ) {
+      return reply.code(400).send({
+        error: "missing_api_key",
+        message: "请先填写你自己的 DeepSeek API Key。"
+      });
+    }
+
+    return orchestrator.analyze(parsed.data, {
+      apiKey: suppliedApiKey || undefined
+    });
   });
 
   app.post("/api/evals/run", async () => {

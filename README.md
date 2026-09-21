@@ -47,22 +47,17 @@ The default `LLM_MODE=mock` runs the complete pipeline without network access. T
 
 ```text
 LLM_MODE=openai-compatible
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_API_KEY=your-key
-LLM_MODEL=gpt-4.1-mini
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-flash
+LLM_SUPPORTS_VISION=true
+LLM_ENFORCE_BYOK=true
 ```
+
+`LLM_ENFORCE_BYOK=true` disables the server-side shared key. Each user enters a DeepSeek key in the browser. The key is stored in `sessionStorage`, sent only with the analysis request, and is not persisted in SQLite, traces, or logs.
 
 `deepseek-flash` supports vision input, so a chat screenshot can be used as the only case input. The model reads visible text, speakers, and timestamps directly from the screenshot.
 
-DeepSeek example:
-
-```text
-LLM_MODE=openai-compatible
-LLM_BASE_URL=https://api.deepseek.com
-LLM_API_KEY=your-key
-LLM_MODEL=deepseek-flash
-LLM_SUPPORTS_VISION=true
-```
+If the server must never receive a user's API key, use the local installation mode or call DeepSeek directly from a trusted client in a future architecture.
 
 ## Commands
 
@@ -95,8 +90,10 @@ The repository includes a `render.yaml` blueprint.
 1. Push the repository to GitHub.
 2. In Render, choose `New` -> `Blueprint`.
 3. Select the GitHub repository.
-4. Set the secret `LLM_API_KEY` when Render prompts for it.
-5. Deploy and open the generated `onrender.com` URL.
+4. Deploy and open the generated `onrender.com` URL.
+5. Each user enters their own DeepSeek key in the workbench.
+
+Do not configure `LLM_API_KEY` in Render when `LLM_ENFORCE_BYOK=true`. If the variable already exists, delete it from the Render environment.
 
 The blueprint uses `/tmp/relatelab.sqlite`. Render's default container filesystem is ephemeral, so case history resets after a restart or redeploy. For persistent case history, attach a Render disk and set:
 

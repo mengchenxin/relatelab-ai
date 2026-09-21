@@ -192,6 +192,7 @@ export const HealthSchema = z.object({
     mode: z.string(),
     model: z.string(),
     configured: z.boolean(),
+    keyMode: z.enum(["none", "server", "byok"]),
     supportsVision: z.boolean()
   }),
   database: z.string(),

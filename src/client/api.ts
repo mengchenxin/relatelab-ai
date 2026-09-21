@@ -13,6 +13,7 @@ interface HealthResponse {
     mode: string;
     model: string;
     configured: boolean;
+    keyMode: "none" | "server" | "byok";
     supportsVision: boolean;
   };
   database: string;
@@ -75,11 +76,17 @@ export function deleteCase(
 }
 
 export function analyzeCase(
-  input: AnalysisRequest
+  input: AnalysisRequest,
+  apiKey?: string
 ): Promise<AnalysisResult> {
   return request<AnalysisResult>("/api/analyze", {
     method: "POST",
-    body: JSON.stringify(input)
+    body: JSON.stringify(input),
+    headers: apiKey
+      ? {
+          "x-llm-api-key": apiKey
+        }
+      : undefined
   });
 }
 

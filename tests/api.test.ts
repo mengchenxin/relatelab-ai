@@ -13,7 +13,8 @@ test("loads a historical case and deletes it through the API", async (context) =
         apiKey: "",
         model: "test-model",
         timeoutMs: 1000,
-        supportsVision: false
+        supportsVision: false,
+        enforceByok: false
       }
     })
   );
@@ -74,4 +75,47 @@ test("loads a historical case and deletes it through the API", async (context) =
     url: `/api/cases/${result.caseId}`
   });
   assert.equal(missingResponse.statusCode, 404);
+});
+
+test("requires a user-supplied key when BYOK is enforced", async (context) => {
+  const application = await createApplication(
+    loadConfig({
+      sqlitePath: ":memory:",
+      llm: {
+        mode: "openai-compatible",
+        baseUrl: "https://api.deepseek.com",
+        apiKey: "server-key-that-must-be-ignored",
+        model: "deepseek-flash",
+        timeoutMs: 1000,
+        supportsVision: true,
+        enforceByok: true
+      }
+    })
+  );
+
+  context.after(async () => {
+    await application.app.close();
+  });
+
+  const healthResponse = await application.app.inject({
+    method: "GET",
+    url: "/api/health"
+  });
+  assert.equal(healthResponse.statusCode, 200);
+  assert.equal(healthResponse.json().provider.keyMode, "byok");
+
+  const analyzeResponse = await application.app.inject({
+    method: "POST",
+    url: "/api/analyze",
+    payload: {
+      title: "BYOK 测试",
+      goal: "deescalate",
+      relationshipType: "partner",
+      transcript: "我 20:00 你今天又没提前说。",
+      imageDataUrl: undefined
+    }
+  });
+
+  assert.equal(analyzeResponse.statusCode, 400);
+  assert.equal(analyzeResponse.json().error, "missing_api_key");
 });

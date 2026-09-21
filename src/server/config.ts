@@ -14,6 +14,7 @@ export interface AppConfig {
     model: string;
     timeoutMs: number;
     supportsVision: boolean;
+    enforceByok: boolean;
   };
 }
 
@@ -44,7 +45,8 @@ export function loadConfig(
       apiKey: process.env.LLM_API_KEY || "",
       model: process.env.LLM_MODEL || "gpt-4.1-mini",
       timeoutMs: readNumber(process.env.LLM_TIMEOUT_MS, 45_000),
-      supportsVision: process.env.LLM_SUPPORTS_VISION === "true"
+      supportsVision: process.env.LLM_SUPPORTS_VISION === "true",
+      enforceByok: process.env.LLM_ENFORCE_BYOK === "true"
     }
   };
 

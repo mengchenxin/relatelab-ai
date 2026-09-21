@@ -14,7 +14,8 @@ test("runs the complete offline pipeline and persists a trace", async () => {
       apiKey: "",
       model: "test-model",
       timeoutMs: 1000,
-      supportsVision: false
+      supportsVision: false,
+      enforceByok: false
     }
   });
   const database = new RelateDatabase(config.sqlitePath);

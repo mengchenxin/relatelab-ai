@@ -43,6 +43,7 @@ import { redactText } from "../security/redact.ts";
 
 interface AnalyzeOptions {
   persist?: boolean;
+  apiKey?: string;
 }
 
 function summarize(value: unknown, maxLength = 160): string {
@@ -147,7 +148,7 @@ export class AgentOrchestrator {
           imageDataUrl: this.gateway.supportsVision
             ? request.imageDataUrl
             : undefined
-        }),
+        }, options.apiKey),
       (value) => `${value.events.length} events; ${value.openQuestions.length} open questions`
     );
 
@@ -162,7 +163,7 @@ export class AgentOrchestrator {
           schema: DynamicsSchema,
           fallback: () => analyzeDynamics(timeline),
           normalize: normalizeDynamics
-        }),
+        }, options.apiKey),
       (value) => `${value.primaryPattern}; confidence=${value.confidence.toFixed(2)}`
     );
 
@@ -177,7 +178,7 @@ export class AgentOrchestrator {
           schema: SafetyAssessmentSchema,
           fallback: () => assessSafety(redaction.text),
           normalize: normalizeSafety
-        }),
+        }, options.apiKey),
       (value) => `${value.riskLevel}; ${value.flags.join(", ") || "no flags"}`
     );
 
@@ -194,7 +195,7 @@ export class AgentOrchestrator {
           schema: StrategySchema.array().min(1),
           fallback: () => generateStrategies(request.goal, dynamics, safety, timeline),
           normalize: normalizeStrategies
-        }),
+        }, options.apiKey),
       (value) => `${value.length} strategies; tones=${[...new Set(value.map((item) => item.tone))].join(",")}`
     );
 

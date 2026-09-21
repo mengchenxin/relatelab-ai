@@ -7,11 +7,14 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  Eye,
+  EyeOff,
   FileText,
   FlaskConical,
   FolderOpen,
   Gauge,
   GitBranch,
+  KeyRound,
   Layers,
   Loader2,
   Play,
@@ -57,6 +60,7 @@ interface HealthState {
     mode: string;
     model: string;
     configured: boolean;
+    keyMode: "none" | "server" | "byok";
     supportsVision: boolean;
   };
   database: string;
@@ -219,10 +223,12 @@ function Header({
 
 function Workbench({
   initialResult,
+  keyMode,
   onCompleted,
   onReset
 }: {
   initialResult: AnalysisResult | null;
+  keyMode: "none" | "server" | "byok";
   onCompleted: (result: AnalysisResult) => void;
   onReset: () => void;
 }) {
@@ -236,7 +242,14 @@ function Workbench({
   const [activeTab, setActiveTab] = useState<ResultTab>("conversation");
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState("");
-  const canRun = Boolean(imageDataUrl);
+  const [apiKey, setApiKey] = useState(
+    () => sessionStorage.getItem("relatelab.deepseek.key") || ""
+  );
+  const [showApiKey, setShowApiKey] = useState(false);
+  const requiresUserKey = keyMode === "byok" || keyMode === "none";
+  const canRun =
+    Boolean(imageDataUrl) &&
+    (!requiresUserKey || apiKey.trim().length > 0);
 
   useEffect(() => {
     if (!initialResult) {
@@ -275,7 +288,7 @@ function Workbench({
         transcript: "",
         imageDataUrl
       };
-      const output = await analyzeCase(payload);
+      const output = await analyzeCase(payload, apiKey.trim() || undefined);
       setResult(output);
       setActiveTab("conversation");
       onCompleted(output);
@@ -335,6 +348,54 @@ function Workbench({
             maxLength={80}
           />
         </label>
+
+        <section
+          className={`key-settings ${
+            requiresUserKey && !apiKey.trim() ? "missing" : ""
+          }`}
+        >
+          <div className="key-settings-head">
+            <KeyRound size={17} />
+            <div>
+              <strong>DeepSeek API Key</strong>
+              <span>
+                {keyMode === "server"
+                  ? "当前由部署方提供，不会显示密钥内容"
+                  : "仅保存在当前浏览器标签页"}
+              </span>
+            </div>
+          </div>
+          {keyMode === "server" ? null : (
+            <div className="key-input-row">
+              <input
+                type={showApiKey ? "text" : "password"}
+                value={apiKey}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setApiKey(value);
+                  if (value.trim()) {
+                    sessionStorage.setItem("relatelab.deepseek.key", value);
+                  } else {
+                    sessionStorage.removeItem("relatelab.deepseek.key");
+                  }
+                }}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                title={showApiKey ? "隐藏 Key" : "显示 Key"}
+                onClick={() => setShowApiKey((current) => !current)}
+              >
+                {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          )}
+          <small>
+            分析时临时发送给后端调用 DeepSeek，不写入数据库、Trace 或运行日志。
+          </small>
+        </section>
 
         <div className="field-grid">
           <label className="field">
@@ -1148,6 +1209,16 @@ function SystemView({ health }: { health: HealthState | null }) {
               <dd>{health?.provider.model || "-"}</dd>
             </div>
             <div>
+              <dt>密钥模式</dt>
+              <dd>
+                {health?.provider.keyMode === "byok"
+                  ? "用户自带 Key"
+                  : health?.provider.keyMode === "server"
+                    ? "服务端托管"
+                    : "未配置"}
+              </dd>
+            </div>
+            <div>
               <dt>视觉输入</dt>
               <dd>{health?.provider.supportsVision ? "已启用" : "未启用"}</dd>
             </div>
@@ -1276,6 +1347,7 @@ export function App() {
       return (
         <Workbench
           initialResult={loadedResult}
+          keyMode={health?.provider.keyMode || "none"}
           onCompleted={(result) => {
             setLoadedResult(result);
             void refreshCases();

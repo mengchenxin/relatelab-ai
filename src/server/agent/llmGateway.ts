@@ -80,12 +80,27 @@ export class ModelGateway {
     return this.config.mode === "mock" || Boolean(this.config.apiKey);
   }
 
+  get enforceByok(): boolean {
+    return this.config.enforceByok;
+  }
+
+  get keyMode(): "none" | "server" | "byok" {
+    if (this.config.mode === "mock") {
+      return "none";
+    }
+    if (this.config.enforceByok) {
+      return "byok";
+    }
+    return this.config.apiKey ? "server" : "none";
+  }
+
   get supportsVision(): boolean {
     return this.config.supportsVision;
   }
 
   async generate<T>(
-    request: StructuredGenerationRequest<T>
+    request: StructuredGenerationRequest<T>,
+    apiKeyOverride?: string
   ): Promise<StructuredGenerationResult<T>> {
     if (this.config.mode === "mock") {
       return {
@@ -96,13 +111,18 @@ export class ModelGateway {
       };
     }
 
-    if (!this.config.apiKey) {
+    const apiKey = this.config.enforceByok
+      ? apiKeyOverride
+      : apiKeyOverride || this.config.apiKey;
+
+    if (!apiKey) {
       return {
         data: request.fallback(),
         provider: "deterministic",
         model: "heuristic-analyzer-v1",
         degraded: true,
-        warning: "LLM_API_KEY is not configured; the run used the deterministic fallback.",
+        warning:
+          "No DeepSeek API key was supplied; the run used the deterministic fallback.",
         error: "missing_api_key"
       };
     }
@@ -115,7 +135,11 @@ export class ModelGateway {
 Return JSON only. It must conform exactly to this JSON Schema:
 ${JSON.stringify(z.toJSONSchema(request.schema))}`
       };
-      const raw = await this.callOpenAiCompatible(contractedRequest, true);
+      const raw = await this.callOpenAiCompatible(
+        contractedRequest,
+        true,
+        apiKey
+      );
       const parsed = this.parseCandidate(contractedRequest, raw.json);
 
       if (!parsed.success) {
@@ -129,7 +153,8 @@ ${parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`
 
 Return a corrected JSON object only.`
           },
-          false
+          false,
+          apiKey
         );
         const repairedParsed = this.parseCandidate(
           contractedRequest,
@@ -218,7 +243,8 @@ Return a corrected JSON object only.`
 
   private async callOpenAiCompatible<T>(
     request: StructuredGenerationRequest<T>,
-    includeJsonMode: boolean
+    includeJsonMode: boolean,
+    apiKey: string
   ): Promise<{ json: unknown; usage?: Usage }> {
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -238,7 +264,7 @@ Return a corrected JSON object only.`
       const response = await fetch(`${this.config.baseUrl}/chat/completions`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.config.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
@@ -262,7 +288,7 @@ Return a corrected JSON object only.`
       if (!response.ok) {
         const body = await response.text();
         if (includeJsonMode && response.status === 400) {
-          return this.callOpenAiCompatible(request, false);
+          return this.callOpenAiCompatible(request, false, apiKey);
         }
         throw new Error(`model_http_${response.status}: ${body.slice(0, 300)}`);
       }
