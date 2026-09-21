@@ -77,7 +77,13 @@ export class ModelGateway {
   }
 
   get configured(): boolean {
-    return this.config.mode === "mock" || Boolean(this.config.apiKey);
+    if (this.config.mode === "mock") {
+      return true;
+    }
+    if (this.config.enforceByok) {
+      return false;
+    }
+    return Boolean(this.config.apiKey);
   }
 
   get enforceByok(): boolean {
