@@ -46,7 +46,9 @@ export async function runEvaluation(
       title: item.title,
       goal: item.goal,
       relationshipType: item.relationshipType,
-      transcript: item.transcript
+      transcript: item.transcript,
+      consentAccepted: true,
+      consentVersion: "2026-09-22"
     };
     const result = await orchestrator.analyze(request, { persist: false });
     const containsPii =
@@ -121,6 +123,6 @@ export async function runEvaluation(
     results
   });
 
-  database.saveEvaluation(report);
+  await database.saveEvaluation(report);
   return report;
 }

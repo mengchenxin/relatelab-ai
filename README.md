@@ -21,6 +21,10 @@ RelateLab 是一个面向真实人际关系问题的 AI 工程工作台。
 - 记录每个 Agent 的模型、耗时、Token、输出摘要和降级状态
 - 内置评测集，覆盖结构契约、安全性、证据引用、策略多样性和脱敏
 - 支持每个用户配置自己的 DeepSeek API Key，不共享部署方密钥
+- 使用签名 HttpOnly 会话 Cookie 隔离不同用户的案例数据
+- 支持隐私同意、数据保留期限、一键删除全部数据和单个案例删除
+- 对分析请求限流，并校验截图 MIME、文件签名和大小
+- 支持 SQLite 本地开发与 PostgreSQL 生产持久化
 
 ## 整体流程
 
@@ -71,6 +75,8 @@ LLM_ENFORCE_BYOK=true
 
 如果要求后端永远看不到用户 Key，需要改为浏览器直接调用 DeepSeek，或使用纯本地运行版本。
 
+完整的用户数据说明见 [`public/privacy.html`](public/privacy.html)。
+
 ## 本地运行
 
 ```powershell
@@ -108,7 +114,7 @@ npm run build
 npm run check
 ```
 
-当前包含 9 个测试，覆盖：
+当前包含 13 个测试，覆盖：
 
 - 案例运行、列表、历史加载和删除
 - BYOK 缺失用户 Key 时拒绝分析
@@ -117,6 +123,10 @@ npm run check
 - 安全风险分级
 - DeepSeek 输出归一化
 - 隐私脱敏
+- 匿名会话签名与篡改校验
+- 不同会话之间的案例隔离
+- 截图格式与文件签名校验
+- 分析请求限流
 
 ## API
 
@@ -147,6 +157,16 @@ Render 免费实例在一段时间无访问后会休眠，首次打开可能需�
 ```text
 SQLITE_PATH=/var/data/relatelab.sqlite
 ```
+
+生产环境更推荐配置 PostgreSQL：
+
+```text
+DATABASE_URL=postgresql://user:password@host:5432/database
+SESSION_SECRET=使用 Render 自动生成的高强度随机值
+DATA_RETENTION_DAYS=30
+```
+
+配置 `DATABASE_URL` 后，系统会自动使用 PostgreSQL，并在启动时执行基础表结构迁移。
 
 ## 项目定位
 

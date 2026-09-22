@@ -23,7 +23,9 @@ export const AnalysisRequestSchema = z
     goal: GoalSchema,
     relationshipType: RelationshipTypeSchema,
     transcript: z.string().trim().max(50_000).default(""),
-    imageDataUrl: z.string().max(8_000_000).optional()
+    imageDataUrl: z.string().max(8_000_000).optional(),
+    consentAccepted: z.boolean().default(false),
+    consentVersion: z.string().max(40).default("2026-09-22")
   })
   .refine((value) => value.transcript.length >= 10 || Boolean(value.imageDataUrl), {
     message: "Provide at least 10 characters of conversation text or a screenshot."
@@ -194,6 +196,11 @@ export const HealthSchema = z.object({
     configured: z.boolean(),
     keyMode: z.enum(["none", "server", "byok"]),
     supportsVision: z.boolean()
+  }),
+  privacy: z.object({
+    retentionDays: z.number().int().positive(),
+    consentVersion: z.string(),
+    storage: z.enum(["sqlite", "postgres"])
   }),
   database: z.string(),
   timestamp: z.string()

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RelateLab 隐私与数据说明</title>
+    <style>
+      body {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 40px 22px 72px;
+        color: #17211e;
+        background: #f6f8f7;
+        font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+        line-height: 1.8;
+      }
+      article {
+        padding: 30px;
+        border: 1px solid #d8e0dd;
+        border-radius: 10px;
+        background: #ffffff;
+      }
+      h1 { margin-top: 0; }
+      h2 { margin-top: 28px; font-size: 18px; }
+      p, li { color: #43514c; font-size: 14px; }
+      code { color: #075f52; }
+    </style>
+  </head>
+  <body>
+    <article>
+      <h1>RelateLab 隐私与数据说明</h1>
+      <p>版本：2026-09-22</p>
+
+      <h2>我们处理什么数据</h2>
+      <ul>
+        <li>用户上传的聊天截图</li>
+        <li>用户选择的关系类型和分析目标</li>
+        <li>系统生成的脱敏文本、时间线、安全判断、策略和运行记录</li>
+      </ul>
+
+      <h2>截图如何处理</h2>
+      <p>
+        聊天截图会发送给用户配置的 DeepSeek 视觉模型，用于读取消息内容并完成分析。
+        默认不把原始截图写入案例库。
+      </p>
+
+      <h2>API Key 如何处理</h2>
+      <p>
+        API Key 仅保存在当前浏览器标签页的 <code>sessionStorage</code>，
+        分析时通过请求头临时发送给后端。系统不会把 Key 写入数据库、Trace、案例库或应用日志。
+        关闭标签页或浏览器后，Key 会自动清除。
+      </p>
+
+      <h2>数据保留</h2>
+      <p>
+        案例分析默认保留 30 天，超期记录会自动清理。具体保留期限以线上健康接口返回的配置为准。
+      </p>
+
+      <h2>用户权利</h2>
+      <ul>
+        <li>用户可以删除单个案例</li>
+        <li>用户可以在“系统状态”页面删除自己的全部数据</li>
+        <li>不同匿名会话的案例相互隔离，不能互相读取或删除</li>
+      </ul>
+
+      <h2>安全边界</h2>
+      <p>
+        RelateLab 用于沟通分析和决策支持，不提供心理诊断、医疗建议或紧急救援。
+        如果存在自伤、暴力或人身危险，请优先联系当地紧急服务和可信赖的现实联系人。
+      </p>
+
+      <h2>问题与删除请求</h2>
+      <p>
+        可以通过 GitHub 仓库提交问题：
+        <a href="https://github.com/mengchenxin/relatelab-ai/issues">
+          github.com/mengchenxin/relatelab-ai/issues
+        </a>
+      </p>
+    </article>
+  </body>
+</html>

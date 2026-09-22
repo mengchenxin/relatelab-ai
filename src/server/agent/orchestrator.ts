@@ -44,6 +44,7 @@ import { redactText } from "../security/redact.ts";
 interface AnalyzeOptions {
   persist?: boolean;
   apiKey?: string;
+  ownerId?: string;
 }
 
 function summarize(value: unknown, maxLength = 160): string {
@@ -231,8 +232,10 @@ export class AgentOrchestrator {
     });
 
     if (options.persist !== false) {
-      this.database.saveCase({
+      const ownerId = options.ownerId || "system";
+      await this.database.saveCase({
         id: caseId,
+        ownerId,
         title: request.title,
         goal: request.goal,
         relationshipType: request.relationshipType,
@@ -240,7 +243,8 @@ export class AgentOrchestrator {
         hasImage: Boolean(request.imageDataUrl),
         createdAt: startedAt.toISOString()
       });
-      this.database.saveRun({
+      await this.database.saveRun({
+        ownerId,
         result,
         request: {
           ...request,

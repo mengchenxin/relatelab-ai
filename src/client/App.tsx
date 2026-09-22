@@ -29,7 +29,9 @@ import {
 } from "lucide-react";
 import {
   analyzeCase,
+  deleteAllData,
   deleteCase,
+  ensureSession,
   getCase,
   getCases,
   getHealth,
@@ -62,6 +64,11 @@ interface HealthState {
     configured: boolean;
     keyMode: "none" | "server" | "byok";
     supportsVision: boolean;
+  };
+  privacy: {
+    retentionDays: number;
+    consentVersion: string;
+    storage: "sqlite" | "postgres";
   };
   database: string;
 }
@@ -224,11 +231,15 @@ function Header({
 function Workbench({
   initialResult,
   keyMode,
+  retentionDays,
+  consentVersion,
   onCompleted,
   onReset
 }: {
   initialResult: AnalysisResult | null;
   keyMode: "none" | "server" | "byok";
+  retentionDays: number;
+  consentVersion: string;
   onCompleted: (result: AnalysisResult) => void;
   onReset: () => void;
 }) {
@@ -246,10 +257,14 @@ function Workbench({
     () => sessionStorage.getItem("relatelab.deepseek.key") || ""
   );
   const [showApiKey, setShowApiKey] = useState(false);
+  const [consentAccepted, setConsentAccepted] = useState(
+    () => sessionStorage.getItem("relatelab.consent") === consentVersion
+  );
   const requiresUserKey = keyMode === "byok" || keyMode === "none";
   const canRun =
     Boolean(imageDataUrl) &&
-    (!requiresUserKey || apiKey.trim().length > 0);
+    (!requiresUserKey || apiKey.trim().length > 0) &&
+    consentAccepted;
 
   useEffect(() => {
     if (!initialResult) {
@@ -286,7 +301,9 @@ function Workbench({
         goal,
         relationshipType,
         transcript: "",
-        imageDataUrl
+        imageDataUrl,
+        consentAccepted,
+        consentVersion
       };
       const output = await analyzeCase(payload, apiKey.trim() || undefined);
       setResult(output);
@@ -396,6 +413,38 @@ function Workbench({
             分析时临时发送给后端调用 DeepSeek，不写入数据库、Trace 或运行日志。
           </small>
         </section>
+
+        <label className="consent-row">
+          <input
+            type="checkbox"
+            checked={consentAccepted}
+            onChange={(event) => {
+              const checked = event.target.checked;
+              setConsentAccepted(checked);
+              if (checked) {
+                sessionStorage.setItem("relatelab.consent", consentVersion);
+              } else {
+                sessionStorage.removeItem("relatelab.consent");
+              }
+            }}
+          />
+          <div>
+            <strong>
+              我同意
+              <a
+                href="/privacy.html"
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+              >
+                数据使用与隐私说明
+              </a>
+            </strong>
+            <span>
+              截图会发送给 DeepSeek；案例默认保留 {retentionDays} 天，可随时在系统状态中全部删除。
+            </span>
+          </div>
+        </label>
 
         <div className="field-grid">
           <label className="field">
@@ -1141,7 +1190,16 @@ function EvaluationView({
   );
 }
 
-function SystemView({ health }: { health: HealthState | null }) {
+function SystemView({
+  health,
+  deletingData,
+  onDeleteAllData
+}: {
+  health: HealthState | null;
+  deletingData: boolean;
+  onDeleteAllData: () => void;
+}) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const modules = [
     {
       icon: <ScanText size={19} />,
@@ -1226,6 +1284,14 @@ function SystemView({ health }: { health: HealthState | null }) {
               <dt>数据存储</dt>
               <dd>{health?.database || "-"}</dd>
             </div>
+            <div>
+              <dt>保留期限</dt>
+              <dd>
+                {health?.privacy.retentionDays
+                  ? `${health.privacy.retentionDays} 天`
+                  : "-"}
+              </dd>
+            </div>
           </dl>
         </section>
 
@@ -1239,6 +1305,54 @@ function SystemView({ health }: { health: HealthState | null }) {
           ))}
         </section>
       </div>
+
+      <section className="privacy-band">
+        <div>
+          <ShieldCheck size={20} />
+          <div>
+            <strong>隐私与数据控制</strong>
+            <span>
+              截图与原始 Key 不会写入案例库；分析结果按保留期限自动清理。
+            </span>
+          </div>
+        </div>
+        {confirmDelete ? (
+          <div className="danger-actions">
+            <button
+              className="danger-button"
+              type="button"
+              disabled={deletingData}
+              onClick={() => {
+                onDeleteAllData();
+                setConfirmDelete(false);
+              }}
+            >
+              {deletingData ? (
+                <Loader2 className="spin" size={16} />
+              ) : (
+                <Trash2 size={16} />
+              )}
+              确认删除全部数据
+            </button>
+            <button
+              className="secondary-button"
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+            >
+              取消
+            </button>
+          </div>
+        ) : (
+          <button
+            className="danger-button"
+            type="button"
+            onClick={() => setConfirmDelete(true)}
+          >
+            <Trash2 size={16} />
+            删除我的全部数据
+          </button>
+        )}
+      </section>
 
       <section className="architecture-band">
         <div className="architecture-title">
@@ -1277,6 +1391,7 @@ export function App() {
   const [loadedResult, setLoadedResult] = useState<AnalysisResult | null>(null);
   const [evaluationRunning, setEvaluationRunning] = useState(false);
   const [evaluationError, setEvaluationError] = useState("");
+  const [deletingData, setDeletingData] = useState(false);
 
   const refreshCases = useCallback(async () => {
     setCasesLoading(true);
@@ -1288,11 +1403,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    void Promise.allSettled([
-      getHealth().then(setHealth),
-      getLatestEvaluation().then(setEvaluation),
-      refreshCases()
-    ]);
+    void (async () => {
+      await ensureSession();
+      await Promise.allSettled([
+        getHealth().then(setHealth),
+        getLatestEvaluation().then(setEvaluation),
+        refreshCases()
+      ]);
+    })();
   }, [refreshCases]);
 
   const handleEvaluation = async () => {
@@ -1342,12 +1460,31 @@ export function App() {
     }
   };
 
+  const handleDeleteAllData = async () => {
+    setDeletingData(true);
+    setCaseError("");
+    try {
+      await deleteAllData();
+      setLoadedResult(null);
+      setCases([]);
+      setEvaluation(null);
+    } catch (error) {
+      setCaseError(
+        error instanceof Error ? error.message : "删除数据失败。"
+      );
+    } finally {
+      setDeletingData(false);
+    }
+  };
+
   const activeContent = useMemo(() => {
     if (activeView === "workbench") {
       return (
         <Workbench
           initialResult={loadedResult}
           keyMode={health?.provider.keyMode || "none"}
+          retentionDays={health?.privacy.retentionDays || 30}
+          consentVersion={health?.privacy.consentVersion || "2026-09-22"}
           onCompleted={(result) => {
             setLoadedResult(result);
             void refreshCases();
@@ -1380,13 +1517,20 @@ export function App() {
         />
       );
     }
-    return <SystemView health={health} />;
+    return (
+      <SystemView
+        health={health}
+        deletingData={deletingData}
+        onDeleteAllData={() => void handleDeleteAllData()}
+      />
+    );
   }, [
     activeView,
     cases,
     casesLoading,
     caseError,
     deletingCaseId,
+    deletingData,
     evaluation,
     evaluationError,
     evaluationRunning,

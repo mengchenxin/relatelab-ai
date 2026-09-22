@@ -2,16 +2,28 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import cors from "@fastify/cors";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest
+} from "fastify";
 import {
   AnalysisRequestSchema,
   HealthSchema
 } from "../shared/contracts.ts";
 import { AgentOrchestrator } from "./agent/orchestrator.ts";
 import { ModelGateway } from "./agent/llmGateway.ts";
+import {
+  createSessionToken,
+  getRequestSession,
+  setSessionCookie,
+  type UserSession
+} from "./auth/session.ts";
 import { loadConfig, type AppConfig } from "./config.ts";
-import { RelateDatabase } from "./db.ts";
+import { createDatabase, type RelateDatabase } from "./db.ts";
 import { runEvaluation } from "./evaluation/evaluator.ts";
+import { validateImageDataUrl } from "./security/image.ts";
+import { FixedWindowRateLimiter } from "./security/rateLimit.ts";
 
 export interface ApplicationContext {
   app: FastifyInstance;
@@ -27,14 +39,40 @@ export async function createApplication(
     logger: true,
     bodyLimit: 8 * 1024 * 1024
   });
-  const database = new RelateDatabase(config.sqlitePath);
+  const database = createDatabase(config);
   const gateway = new ModelGateway(config.llm);
   const orchestrator = new AgentOrchestrator(database, gateway);
+  const rateLimiter = new FixedWindowRateLimiter();
+
+  const readSession = (request: FastifyRequest): UserSession | null =>
+    getRequestSession(request, config.session);
+
+  const requireSession = (
+    request: FastifyRequest,
+    reply: FastifyReply
+  ): UserSession | null => {
+    const session = readSession(request);
+    if (!session) {
+      reply.code(401).send({
+        error: "authentication_required",
+        message: "会话已过期，请刷新页面后重试。"
+      });
+      return null;
+    }
+    return session;
+  };
 
   await app.register(cors, {
     origin: true,
+    credentials: true,
     methods: ["GET", "POST", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-llm-api-key"]
+  });
+
+  app.addHook("onSend", async (_request, reply) => {
+    reply.header("X-Content-Type-Options", "nosniff");
+    reply.header("X-Frame-Options", "DENY");
+    reply.header("Referrer-Policy", "no-referrer");
   });
 
   app.get("/api/health", async () => {
@@ -49,32 +87,110 @@ export async function createApplication(
         keyMode: gateway.keyMode,
         supportsVision: gateway.supportsVision
       },
-      database: config.sqlitePath === ":memory:" ? "memory" : "sqlite",
+      privacy: {
+        retentionDays: config.privacy.retentionDays,
+        consentVersion: config.privacy.consentVersion,
+        storage: database.kind
+      },
+      database: database.kind,
       timestamp: new Date().toISOString()
     });
   });
 
-  app.get("/api/cases", async () => {
+  app.post("/api/auth/session", async (request, reply) => {
+    const rate = rateLimiter.consume(
+      `session:${request.ip}`,
+      20,
+      60_000
+    );
+    if (!rate.allowed) {
+      reply.header("Retry-After", rate.retryAfterSeconds);
+      return reply.code(429).send({
+        error: "rate_limited"
+      });
+    }
+
+    const existing = readSession(request);
+    if (existing) {
+      return {
+        userId: existing.userId,
+        expiresAt: new Date(existing.expiresAt).toISOString()
+      };
+    }
+
+    const created = createSessionToken(config.session);
+    setSessionCookie(reply, config, created.token);
     return {
-      cases: database.listCases()
+      userId: created.session.userId,
+      expiresAt: new Date(created.session.expiresAt).toISOString()
     };
   });
 
-  app.get<{ Params: { id: string } }>("/api/cases/:id", async (request, reply) => {
-    const run = database.getLatestRunByCaseId(request.params.id);
-    if (!run) {
-      return reply.code(404).send({
-        error: "case_not_found",
-        message: "没有找到这个案例的运行结果。"
-      });
+  app.get("/api/auth/me", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
     }
-    return run;
+    return {
+      userId: session.userId,
+      expiresAt: new Date(session.expiresAt).toISOString()
+    };
   });
+
+  app.delete("/api/auth/data", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+    const deletedCases = await database.deleteAllForOwner(session.userId);
+    return {
+      deleted: true,
+      deletedCases
+    };
+  });
+
+  app.get("/api/cases", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+    return {
+      cases: await database.listCases(session.userId)
+    };
+  });
+
+  app.get<{ Params: { id: string } }>(
+    "/api/cases/:id",
+    async (request, reply) => {
+      const session = requireSession(request, reply);
+      if (!session) {
+        return;
+      }
+      const run = await database.getLatestRunByCaseId(
+        request.params.id,
+        session.userId
+      );
+      if (!run) {
+        return reply.code(404).send({
+          error: "case_not_found",
+          message: "没有找到这个案例的运行结果。"
+        });
+      }
+      return run;
+    }
+  );
 
   app.delete<{ Params: { id: string } }>(
     "/api/cases/:id",
     async (request, reply) => {
-      const deleted = database.deleteCase(request.params.id);
+      const session = requireSession(request, reply);
+      if (!session) {
+        return;
+      }
+      const deleted = await database.deleteCase(
+        request.params.id,
+        session.userId
+      );
       if (!deleted) {
         return reply.code(404).send({
           error: "case_not_found",
@@ -88,24 +204,71 @@ export async function createApplication(
     }
   );
 
-  app.get<{ Params: { id: string } }>("/api/runs/:id", async (request, reply) => {
-    const run = database.getRun(request.params.id);
-    if (!run) {
-      return reply.code(404).send({
-        error: "run_not_found",
-        message: "No analysis run exists for this identifier."
-      });
+  app.get<{ Params: { id: string } }>(
+    "/api/runs/:id",
+    async (request, reply) => {
+      const session = requireSession(request, reply);
+      if (!session) {
+        return;
+      }
+      const run = await database.getRun(
+        request.params.id,
+        session.userId
+      );
+      if (!run) {
+        return reply.code(404).send({
+          error: "run_not_found",
+          message: "没有找到对应的分析记录。"
+        });
+      }
+      return run;
     }
-    return run;
-  });
+  );
 
   app.post("/api/analyze", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+
+    const rate = rateLimiter.consume(
+      `analyze:${session.userId}`,
+      6,
+      60_000
+    );
+    if (!rate.allowed) {
+      reply.header("Retry-After", rate.retryAfterSeconds);
+      return reply.code(429).send({
+        error: "rate_limited",
+        message: "分析请求过于频繁，请稍后重试。"
+      });
+    }
+
     const parsed = AnalysisRequestSchema.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
         error: "invalid_request",
         issues: parsed.error.issues
       });
+    }
+
+    if (!parsed.data.consentAccepted) {
+      return reply.code(400).send({
+        error: "consent_required",
+        message: "请先确认数据使用和隐私说明。"
+      });
+    }
+
+    if (parsed.data.imageDataUrl) {
+      try {
+        validateImageDataUrl(parsed.data.imageDataUrl);
+      } catch (error) {
+        return reply.code(400).send({
+          error: "invalid_image",
+          message:
+            error instanceof Error ? error.message : "聊天截图无效。"
+        });
+      }
     }
 
     const suppliedKeyHeader = request.headers["x-llm-api-key"];
@@ -124,25 +287,46 @@ export async function createApplication(
     }
 
     return orchestrator.analyze(parsed.data, {
-      apiKey: suppliedApiKey || undefined
+      apiKey: suppliedApiKey || undefined,
+      ownerId: session.userId
     });
   });
 
-  app.post("/api/evals/run", async () => {
-    return runEvaluation(
-      orchestrator,
-      database,
-      gateway.providerMode
-    );
+  app.post("/api/evals/run", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+    return runEvaluation(orchestrator, database, gateway.providerMode);
   });
 
-  app.get("/api/evals/latest", async (_request, reply) => {
-    const report = database.getLatestEvaluation();
+  app.get("/api/evals/latest", async (request, reply) => {
+    const session = requireSession(request, reply);
+    if (!session) {
+      return;
+    }
+    const report = await database.getLatestEvaluation();
     if (!report) {
       return reply.code(204).send();
     }
     return report;
   });
+
+  const retentionCutoff = new Date(
+    Date.now() - config.privacy.retentionDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+  void database.deleteExpiredCases(retentionCutoff).catch((error) => {
+    app.log.error(error, "failed to purge expired cases");
+  });
+  const cleanupTimer = setInterval(() => {
+    const cutoff = new Date(
+      Date.now() - config.privacy.retentionDays * 24 * 60 * 60 * 1000
+    ).toISOString();
+    void database.deleteExpiredCases(cutoff).catch((error) => {
+      app.log.error(error, "failed to purge expired cases");
+    });
+  }, 6 * 60 * 60 * 1000);
+  cleanupTimer.unref();
 
   const clientRoot = path.resolve(process.cwd(), "dist/client");
   if (existsSync(clientRoot)) {
@@ -172,7 +356,9 @@ export async function createApplication(
   });
 
   app.addHook("onClose", async () => {
-    database.close();
+    clearInterval(cleanupTimer);
+    rateLimiter.clear();
+    await database.close();
   });
 
   return {

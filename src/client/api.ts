@@ -16,21 +16,33 @@ interface HealthResponse {
     keyMode: "none" | "server" | "byok";
     supportsVision: boolean;
   };
+  privacy: {
+    retentionDays: number;
+    consentVersion: string;
+    storage: "sqlite" | "postgres";
+  };
   database: string;
   timestamp: string;
 }
 
 async function request<T>(
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  retry = true
 ): Promise<T> {
   const response = await fetch(path, {
     ...init,
+    credentials: "include",
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...init?.headers
     }
   });
+
+  if (response.status === 401 && retry && path !== "/api/auth/session") {
+    await ensureSession();
+    return request<T>(path, init, false);
+  }
 
   if (response.status === 204) {
     return null as T;
@@ -51,6 +63,20 @@ async function request<T>(
   return payload as T;
 }
 
+export function ensureSession(): Promise<{
+  userId: string;
+  expiresAt: string;
+}> {
+  return request<{ userId: string; expiresAt: string }>(
+    "/api/auth/session",
+    {
+      method: "POST",
+      body: "{}"
+    },
+    false
+  );
+}
+
 export function getHealth(): Promise<HealthResponse> {
   return request<HealthResponse>("/api/health");
 }
@@ -69,6 +95,18 @@ export function deleteCase(
 ): Promise<{ deleted: boolean; id: string }> {
   return request<{ deleted: boolean; id: string }>(
     `/api/cases/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE"
+    }
+  );
+}
+
+export function deleteAllData(): Promise<{
+  deleted: boolean;
+  deletedCases: number;
+}> {
+  return request<{ deleted: boolean; deletedCases: number }>(
+    "/api/auth/data",
     {
       method: "DELETE"
     }
