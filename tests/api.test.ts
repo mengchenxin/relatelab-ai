@@ -80,6 +80,45 @@ test("loads a historical case and deletes it through the API", async (context) =
   assert.equal(loadResponse.statusCode, 200);
   assert.equal(loadResponse.json().id, result.id);
 
+  const correctionResponse = await application.app.inject({
+    method: "PATCH",
+    url: `/api/cases/${result.caseId}/events/${result.timeline.events[0].id}`,
+    headers: { cookie },
+    payload: {
+      quote: "修正后的第一条消息",
+      actor: "other",
+      timestamp: "21:10"
+    }
+  });
+  assert.equal(correctionResponse.statusCode, 200);
+  assert.equal(
+    correctionResponse.json().timeline.events[0].quote,
+    "修正后的第一条消息"
+  );
+
+  const outcomeResponse = await application.app.inject({
+    method: "POST",
+    url: `/api/cases/${result.caseId}/outcomes`,
+    headers: { cookie },
+    payload: {
+      strategyId: result.strategies[0].id,
+      adopted: true,
+      responseTone: "improved",
+      conflictChange: "improved",
+      notes: "对方愿意继续沟通"
+    }
+  });
+  assert.equal(outcomeResponse.statusCode, 200);
+  assert.equal(outcomeResponse.json().strategyId, result.strategies[0].id);
+
+  const outcomesResponse = await application.app.inject({
+    method: "GET",
+    url: `/api/cases/${result.caseId}/outcomes`,
+    headers: { cookie }
+  });
+  assert.equal(outcomesResponse.statusCode, 200);
+  assert.equal(outcomesResponse.json().outcomes.length, 1);
+
   const deleteResponse = await application.app.inject({
     method: "DELETE",
     url: `/api/cases/${result.caseId}`,
@@ -231,4 +270,56 @@ test("isolates cases between anonymous sessions", async (context) => {
     headers: { cookie: secondSession }
   });
   assert.equal(secondAccess.statusCode, 404);
+});
+
+test("accepts multiple screenshot inputs", async (context) => {
+  const application = await createApplication(
+    loadConfig({
+      sqlitePath: ":memory:",
+      llm: {
+        mode: "mock",
+        baseUrl: "",
+        apiKey: "",
+        model: "test-model",
+        timeoutMs: 1000,
+        supportsVision: true,
+        enforceByok: false
+      }
+    })
+  );
+
+  context.after(async () => {
+    await application.app.close();
+  });
+
+  const cookie = sessionCookie(
+    await application.app.inject({
+      method: "POST",
+      url: "/api/auth/session",
+      payload: {}
+    })
+  );
+  const png = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from("fixture")
+  ]);
+  const imageDataUrl = `data:image/png;base64,${png.toString("base64")}`;
+
+  const response = await application.app.inject({
+    method: "POST",
+    url: "/api/analyze",
+    headers: { cookie },
+    payload: {
+      title: "多图输入",
+      goal: "deescalate",
+      relationshipType: "partner",
+      transcript: "",
+      imageDataUrls: [imageDataUrl, imageDataUrl],
+      consentAccepted: true,
+      consentVersion: "2026-09-22"
+    }
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().status, "completed");
 });

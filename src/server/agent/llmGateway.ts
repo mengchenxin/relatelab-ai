@@ -13,7 +13,7 @@ export interface StructuredGenerationRequest<T> {
   user: string;
   schema: z.ZodType<T>;
   fallback: () => T;
-  imageDataUrl?: string;
+  imageDataUrls?: string[];
   temperature?: number;
   normalize?: (input: unknown) => unknown;
 }
@@ -259,12 +259,15 @@ Return a corrected JSON object only.`
     );
 
     const userContent =
-      request.imageDataUrl && this.config.supportsVision
-      ? [
-          { type: "text", text: request.user },
-          { type: "image_url", image_url: { url: request.imageDataUrl } }
-        ]
-      : request.user;
+      request.imageDataUrls?.length && this.config.supportsVision
+        ? [
+            { type: "text", text: request.user },
+            ...request.imageDataUrls.map((url) => ({
+              type: "image_url",
+              image_url: { url }
+            }))
+          ]
+        : request.user;
 
     try {
       const response = await fetch(`${this.config.baseUrl}/chat/completions`, {

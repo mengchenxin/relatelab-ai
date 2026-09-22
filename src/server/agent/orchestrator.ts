@@ -33,7 +33,9 @@ import {
 } from "./normalize.ts";
 import {
   dynamicsPrompt,
+  NORMALIZER_VERSION,
   PROMPT_VERSION,
+  SCHEMA_VERSION,
   safetyPrompt,
   safetySystemPrompt,
   strategyPrompt,
@@ -119,7 +121,12 @@ export class AgentOrchestrator {
       return result.data;
     };
 
-    if (request.imageDataUrl) {
+    const imageDataUrls = [
+      ...(request.imageDataUrl ? [request.imageDataUrl] : []),
+      ...request.imageDataUrls
+    ];
+
+    if (imageDataUrls.length > 0) {
       if (this.gateway.providerMode === "mock") {
         warnings.push(
           "A screenshot was attached, but mock mode does not perform OCR or vision extraction."
@@ -146,8 +153,8 @@ export class AgentOrchestrator {
           schema: TimelineSchema,
           fallback: () => parseTimeline(redaction.text),
           normalize: normalizeTimeline,
-          imageDataUrl: this.gateway.supportsVision
-            ? request.imageDataUrl
+          imageDataUrls: this.gateway.supportsVision
+            ? imageDataUrls
             : undefined
         }, options.apiKey),
       (value) => `${value.events.length} events; ${value.openQuestions.length} open questions`
@@ -218,6 +225,11 @@ export class AgentOrchestrator {
       strategies,
       trace,
       warnings: [...new Set(warnings)],
+      versions: {
+        prompt: PROMPT_VERSION,
+        schema: SCHEMA_VERSION,
+        normalizer: NORMALIZER_VERSION
+      },
       metrics: {
         durationMs: completedAt.getTime() - startedAt.getTime(),
         promptTokens: usage.promptTokens,

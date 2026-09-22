@@ -7,6 +7,8 @@ import type {
 } from "../../shared/contracts.ts";
 
 export const PROMPT_VERSION = "relatelab-v1";
+export const SCHEMA_VERSION = "2026-09-22";
+export const NORMALIZER_VERSION = "provider-normalizer-v2";
 
 export const safetySystemPrompt = `
 你是 RelateLab 关系案例工作台中的分析系统。
@@ -29,12 +31,14 @@ export function timelinePrompt(
 
 请根据对话和附图建立按时间排序的事件时间线，并保留用于证据引用的原始语句。
 ${
-  request.imageDataUrl && supportsVision
-    ? "当前请求包含聊天截图。请直接读取截图中可见的聊天内容、说话人和时间；不要猜测未出现的人名、账号或身份。"
+  (request.imageDataUrl || request.imageDataUrls.length > 0) && supportsVision
+    ? `当前请求包含 ${request.imageDataUrls.length + (request.imageDataUrl ? 1 : 0)} 张聊天截图。请按上传顺序读取截图中的聊天内容、说话人和时间；不要猜测未出现的人名、账号或身份。`
     : "当前请求没有可用图片。只能使用对话文本，并把缺失信息写入 openQuestions。"
 }
 时间线可以完全来自截图，也可以来自文字记录，不需要用户同时提供两者。
 每条事件的 summary、emotions、signal 必须使用简体中文；quote 必须保留截图中的原话。
+每条事件还必须给出 interpretation、need、recommendedAction 和 0 到 1 之间的 insightConfidence。
+interpretation 说明这句话可能传递什么，need 说明潜在需求，recommendedAction 给出用户下一步可执行动作。
 
 对话文本：
 ${redaction.text || "[没有文字记录，请仅使用附图。]"}

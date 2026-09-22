@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import fastifyStatic from "@fastify/static";
 import cors from "@fastify/cors";
@@ -9,7 +10,10 @@ import Fastify, {
 } from "fastify";
 import {
   AnalysisRequestSchema,
-  HealthSchema
+  EventCorrectionSchema,
+  HealthSchema,
+  OutcomeRequestSchema,
+  type AnalysisResult
 } from "../shared/contracts.ts";
 import { AgentOrchestrator } from "./agent/orchestrator.ts";
 import { ModelGateway } from "./agent/llmGateway.ts";
@@ -65,7 +69,7 @@ export async function createApplication(
   await app.register(cors, {
     origin: true,
     credentials: true,
-    methods: ["GET", "POST", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "x-llm-api-key"]
   });
 
@@ -180,6 +184,121 @@ export async function createApplication(
     }
   );
 
+  app.patch<{
+    Params: { caseId: string; eventId: string };
+  }>(
+    "/api/cases/:caseId/events/:eventId",
+    async (request, reply) => {
+      const session = requireSession(request, reply);
+      if (!session) {
+        return;
+      }
+      const parsed = EventCorrectionSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: "invalid_correction",
+          issues: parsed.error.issues
+        });
+      }
+
+      const run = await database.getLatestRunByCaseId(
+        request.params.caseId,
+        session.userId
+      );
+      if (!run) {
+        return reply.code(404).send({
+          error: "case_not_found"
+        });
+      }
+
+      const eventIndex = run.timeline.events.findIndex(
+        (event) => event.id === request.params.eventId
+      );
+      if (eventIndex === -1) {
+        return reply.code(404).send({
+          error: "event_not_found"
+        });
+      }
+
+      const updatedEvents = [...run.timeline.events];
+      updatedEvents[eventIndex] = {
+        ...updatedEvents[eventIndex],
+        quote: parsed.data.quote,
+        actor: parsed.data.actor,
+        timestamp: parsed.data.timestamp,
+        insightConfidence: 1
+      };
+      const updated: AnalysisResult = {
+        ...run,
+        timeline: {
+          ...run.timeline,
+          events: updatedEvents
+        }
+      };
+
+      await database.saveRun({
+        ownerId: session.userId,
+        result: updated,
+        request: {
+          source: "manual_correction",
+          eventId: request.params.eventId
+        }
+      });
+      return updated;
+    }
+  );
+
+  app.post<{ Params: { caseId: string } }>(
+    "/api/cases/:caseId/outcomes",
+    async (request, reply) => {
+      const session = requireSession(request, reply);
+      if (!session) {
+        return;
+      }
+      const parsed = OutcomeRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: "invalid_outcome",
+          issues: parsed.error.issues
+        });
+      }
+      const run = await database.getLatestRunByCaseId(
+        request.params.caseId,
+        session.userId
+      );
+      if (!run) {
+        return reply.code(404).send({
+          error: "case_not_found"
+        });
+      }
+      const outcome = {
+        id: randomUUID(),
+        caseId: request.params.caseId,
+        runId: run.id,
+        createdAt: new Date().toISOString(),
+        ...parsed.data
+      };
+      await database.saveOutcome(session.userId, outcome);
+      return outcome;
+    }
+  );
+
+  app.get<{ Params: { caseId: string } }>(
+    "/api/cases/:caseId/outcomes",
+    async (request, reply) => {
+      const session = requireSession(request, reply);
+      if (!session) {
+        return;
+      }
+      return {
+        outcomes: await database.listOutcomes(
+          session.userId,
+          request.params.caseId
+        )
+      };
+    }
+  );
+
   app.delete<{ Params: { id: string } }>(
     "/api/cases/:id",
     async (request, reply) => {
@@ -259,9 +378,15 @@ export async function createApplication(
       });
     }
 
-    if (parsed.data.imageDataUrl) {
+    const submittedImages = [
+      ...(parsed.data.imageDataUrl ? [parsed.data.imageDataUrl] : []),
+      ...parsed.data.imageDataUrls
+    ];
+    if (submittedImages.length > 0) {
       try {
-        validateImageDataUrl(parsed.data.imageDataUrl);
+        for (const image of submittedImages) {
+          validateImageDataUrl(image);
+        }
       } catch (error) {
         return reply.code(400).send({
           error: "invalid_image",

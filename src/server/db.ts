@@ -6,7 +6,8 @@ import type { AppConfig } from "./config.ts";
 import type {
   AnalysisResult,
   CaseSummary,
-  EvaluationReport
+  EvaluationReport,
+  Outcome
 } from "../shared/contracts.ts";
 
 function jsonParse<T>(value: unknown): T | null {
@@ -49,6 +50,8 @@ export interface RelateDatabase {
   listCases(ownerId: string, limit?: number): Promise<CaseSummary[]>;
   saveEvaluation(report: EvaluationReport): Promise<void>;
   getLatestEvaluation(): Promise<EvaluationReport | null>;
+  saveOutcome(ownerId: string, outcome: Outcome): Promise<void>;
+  listOutcomes(ownerId: string, caseId: string): Promise<Outcome[]>;
   close(): Promise<void>;
 }
 
@@ -113,6 +116,19 @@ export class SqliteDatabase implements RelateDatabase {
         report_json TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS outcomes (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        case_id TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        strategy_id TEXT NOT NULL,
+        adopted INTEGER NOT NULL,
+        response_tone TEXT NOT NULL,
+        conflict_change TEXT NOT NULL,
+        notes TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
     `);
 
     if (!this.hasColumn("cases", "owner_id")) {
@@ -133,6 +149,8 @@ export class SqliteDatabase implements RelateDatabase {
         ON runs(owner_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_runs_case_id ON runs(case_id);
       CREATE INDEX IF NOT EXISTS idx_runs_created_at ON runs(created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_outcomes_owner_case
+        ON outcomes(owner_id, case_id, created_at DESC);
     `);
   }
 
@@ -228,6 +246,9 @@ export class SqliteDatabase implements RelateDatabase {
         .prepare("DELETE FROM runs WHERE case_id = ? AND owner_id = ?")
         .run(caseId, ownerId);
       this.database
+        .prepare("DELETE FROM outcomes WHERE case_id = ? AND owner_id = ?")
+        .run(caseId, ownerId);
+      this.database
         .prepare("DELETE FROM cases WHERE id = ? AND owner_id = ?")
         .run(caseId, ownerId);
       this.database.exec("COMMIT;");
@@ -244,6 +265,11 @@ export class SqliteDatabase implements RelateDatabase {
       this.database
         .prepare(
           "DELETE FROM runs WHERE case_id IN (SELECT id FROM cases WHERE owner_id = ?)"
+        )
+        .run(ownerId);
+      this.database
+        .prepare(
+          "DELETE FROM outcomes WHERE case_id IN (SELECT id FROM cases WHERE owner_id = ?)"
         )
         .run(ownerId);
       const result = this.database
@@ -263,6 +289,11 @@ export class SqliteDatabase implements RelateDatabase {
       this.database
         .prepare(
           "DELETE FROM runs WHERE case_id IN (SELECT id FROM cases WHERE created_at < ?)"
+        )
+        .run(cutoff);
+      this.database
+        .prepare(
+          "DELETE FROM outcomes WHERE case_id IN (SELECT id FROM cases WHERE created_at < ?)"
         )
         .run(cutoff);
       const result = this.database
@@ -343,6 +374,51 @@ export class SqliteDatabase implements RelateDatabase {
     return row ? jsonParse<EvaluationReport>(row.report_json) : null;
   }
 
+  async saveOutcome(ownerId: string, outcome: Outcome): Promise<void> {
+    this.database
+      .prepare(
+        `INSERT OR REPLACE INTO outcomes
+          (id, owner_id, case_id, run_id, strategy_id, adopted,
+           response_tone, conflict_change, notes, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        outcome.id,
+        ownerId,
+        outcome.caseId,
+        outcome.runId,
+        outcome.strategyId,
+        outcome.adopted ? 1 : 0,
+        outcome.responseTone,
+        outcome.conflictChange,
+        outcome.notes,
+        outcome.createdAt
+      );
+  }
+
+  async listOutcomes(ownerId: string, caseId: string): Promise<Outcome[]> {
+    const rows = this.database
+      .prepare(
+        `SELECT * FROM outcomes
+         WHERE owner_id = ? AND case_id = ?
+         ORDER BY created_at DESC`
+      )
+      .all(ownerId, caseId) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: String(row.id),
+      caseId: String(row.case_id),
+      runId: String(row.run_id),
+      strategyId: String(row.strategy_id),
+      adopted: Boolean(row.adopted),
+      responseTone: String(row.response_tone) as Outcome["responseTone"],
+      conflictChange: String(
+        row.conflict_change
+      ) as Outcome["conflictChange"],
+      notes: String(row.notes),
+      createdAt: String(row.created_at)
+    }));
+  }
+
   async close(): Promise<void> {
     this.database.close();
   }
@@ -399,11 +475,26 @@ export class PostgresDatabase implements RelateDatabase {
         created_at TIMESTAMPTZ NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS outcomes (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+        run_id TEXT NOT NULL,
+        strategy_id TEXT NOT NULL,
+        adopted BOOLEAN NOT NULL,
+        response_tone TEXT NOT NULL,
+        conflict_change TEXT NOT NULL,
+        notes TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_cases_owner_id
         ON cases(owner_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_runs_owner_id
         ON runs(owner_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_runs_case_id ON runs(case_id);
+      CREATE INDEX IF NOT EXISTS idx_outcomes_owner_case
+        ON outcomes(owner_id, case_id, created_at DESC);
     `);
   }
 
@@ -605,6 +696,61 @@ export class PostgresDatabase implements RelateDatabase {
        LIMIT 1`
     );
     return result.rows[0]?.report_json || null;
+  }
+
+  async saveOutcome(ownerId: string, outcome: Outcome): Promise<void> {
+    await this.ready;
+    await this.pool.query(
+      `INSERT INTO outcomes
+        (id, owner_id, case_id, run_id, strategy_id, adopted,
+         response_tone, conflict_change, notes, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (id) DO UPDATE SET
+         owner_id = EXCLUDED.owner_id,
+         case_id = EXCLUDED.case_id,
+         run_id = EXCLUDED.run_id,
+         strategy_id = EXCLUDED.strategy_id,
+         adopted = EXCLUDED.adopted,
+         response_tone = EXCLUDED.response_tone,
+         conflict_change = EXCLUDED.conflict_change,
+         notes = EXCLUDED.notes,
+         created_at = EXCLUDED.created_at`,
+      [
+        outcome.id,
+        ownerId,
+        outcome.caseId,
+        outcome.runId,
+        outcome.strategyId,
+        outcome.adopted,
+        outcome.responseTone,
+        outcome.conflictChange,
+        outcome.notes,
+        outcome.createdAt
+      ]
+    );
+  }
+
+  async listOutcomes(ownerId: string, caseId: string): Promise<Outcome[]> {
+    await this.ready;
+    const result = await this.pool.query<Record<string, unknown>>(
+      `SELECT * FROM outcomes
+       WHERE owner_id = $1 AND case_id = $2
+       ORDER BY created_at DESC`,
+      [ownerId, caseId]
+    );
+    return result.rows.map((row) => ({
+      id: String(row.id),
+      caseId: String(row.case_id),
+      runId: String(row.run_id),
+      strategyId: String(row.strategy_id),
+      adopted: Boolean(row.adopted),
+      responseTone: String(row.response_tone) as Outcome["responseTone"],
+      conflictChange: String(
+        row.conflict_change
+      ) as Outcome["conflictChange"],
+      notes: String(row.notes),
+      createdAt: new Date(String(row.created_at)).toISOString()
+    }));
   }
 
   async close(): Promise<void> {

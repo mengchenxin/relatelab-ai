@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import {
   analyzeCase,
+  correctCaseEvent,
   deleteAllData,
   deleteCase,
   ensureSession,
@@ -36,7 +37,8 @@ import {
   getCases,
   getHealth,
   getLatestEvaluation,
-  runEvaluation
+  runEvaluation,
+  saveOutcome
 } from "./api.ts";
 import type {
   AnalysisRequest,
@@ -44,6 +46,7 @@ import type {
   CaseSummary,
   EvaluationReport,
   Goal,
+  OutcomeRequest,
   RelationshipType
 } from "../shared/contracts.ts";
 
@@ -71,6 +74,11 @@ interface HealthState {
     storage: "sqlite" | "postgres";
   };
   database: string;
+}
+
+interface UploadedImage {
+  name: string;
+  dataUrl: string;
 }
 
 const goalLabels: Record<Goal, string> = {
@@ -247,8 +255,7 @@ function Workbench({
   const [goal, setGoal] = useState<Goal>("deescalate");
   const [relationshipType, setRelationshipType] =
     useState<RelationshipType>("partner");
-  const [imageDataUrl, setImageDataUrl] = useState<string | undefined>();
-  const [imageName, setImageName] = useState("");
+  const [images, setImages] = useState<UploadedImage[]>([]);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [activeTab, setActiveTab] = useState<ResultTab>("conversation");
   const [isRunning, setIsRunning] = useState(false);
@@ -262,7 +269,7 @@ function Workbench({
   );
   const requiresUserKey = keyMode === "byok" || keyMode === "none";
   const canRun =
-    Boolean(imageDataUrl) &&
+    images.length > 0 &&
     (!requiresUserKey || apiKey.trim().length > 0) &&
     consentAccepted;
 
@@ -273,23 +280,34 @@ function Workbench({
     setTitle(initialResult.title);
     setGoal(initialResult.goal);
     setRelationshipType(initialResult.relationshipType);
-    setImageDataUrl(undefined);
-    setImageName("");
+    setImages([]);
     setResult(initialResult);
     setActiveTab("conversation");
     setError("");
   }, [initialResult]);
 
-  const handleFile = (file?: File) => {
-    if (!file) {
+  const handleFiles = (files: FileList | null) => {
+    if (!files?.length) {
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImageDataUrl(String(reader.result));
-      setImageName(file.name);
-    };
-    reader.readAsDataURL(file);
+    const remaining = Math.max(0, 6 - images.length);
+    for (const file of Array.from(files).slice(0, remaining)) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImages((current) =>
+          current.length >= 6
+            ? current
+            : [
+                ...current,
+                {
+                  name: file.name,
+                  dataUrl: String(reader.result)
+                }
+              ]
+        );
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const run = async () => {
@@ -301,7 +319,7 @@ function Workbench({
         goal,
         relationshipType,
         transcript: "",
-        imageDataUrl,
+        imageDataUrls: images.map((image) => image.dataUrl),
         consentAccepted,
         consentVersion
       };
@@ -316,6 +334,22 @@ function Workbench({
     } finally {
       setIsRunning(false);
     }
+  };
+
+  const correctEvent = async (
+    eventId: string,
+    correction: {
+      quote: string;
+      actor: "self" | "other" | "both" | "unknown";
+      timestamp: string | null;
+    }
+  ) => {
+    if (!result) {
+      return;
+    }
+    const updated = await correctCaseEvent(result.caseId, eventId, correction);
+    setResult(updated);
+    onCompleted(updated);
   };
 
   const tabs: Array<{ id: ResultTab; label: string; count?: number }> = [
@@ -345,8 +379,7 @@ function Workbench({
               setTitle("晚归与持续追问");
               setGoal("deescalate");
               setRelationshipType("partner");
-              setImageDataUrl(undefined);
-              setImageName("");
+              setImages([]);
               setResult(null);
               setError("");
               onReset();
@@ -483,32 +516,41 @@ function Workbench({
           <label className="upload-zone">
             <input
               type="file"
+              multiple
               accept="image/png,image/jpeg,image/webp"
-              onChange={(event) => handleFile(event.target.files?.[0])}
+              onChange={(event) => handleFiles(event.target.files)}
             />
             <Upload size={19} />
             <div>
-              <strong>{imageName || "上传这张聊天记录"}</strong>
-              <span>无需输入文字，AI 会直接读取截图中的消息</span>
+              <strong>
+                {images.length > 0
+                  ? `已上传 ${images.length} 张截图`
+                  : "上传聊天记录截图"}
+              </strong>
+              <span>最多 6 张，按上传顺序读取；无需手工输入对话文字</span>
             </div>
-            {imageDataUrl ? (
-              <button
-                type="button"
-                className="clear-upload"
-                title="移除截图"
-                onClick={(event) => {
-                  event.preventDefault();
-                  setImageDataUrl(undefined);
-                  setImageName("");
-                }}
-              >
-                <X size={15} />
-              </button>
-            ) : null}
           </label>
-          {imageDataUrl ? (
-            <div className="upload-preview">
-              <img src={imageDataUrl} alt="聊天记录截图预览" />
+          {images.length > 0 ? (
+            <div className="upload-preview-grid">
+              {images.map((image, index) => (
+                <figure key={`${image.name}-${index}`}>
+                  <img src={image.dataUrl} alt={`聊天记录截图 ${index + 1}`} />
+                  <figcaption>
+                    <span>{index + 1}</span>
+                    <button
+                      type="button"
+                      title="移除截图"
+                      onClick={() =>
+                        setImages((current) =>
+                          current.filter((_, itemIndex) => itemIndex !== index)
+                        )
+                      }
+                    >
+                      <X size={13} />
+                    </button>
+                  </figcaption>
+                </figure>
+              ))}
             </div>
           ) : null}
         </div>
@@ -610,7 +652,7 @@ function Workbench({
 
             <div className="result-content">
               {activeTab === "conversation" ? (
-                <ConversationView result={result} />
+                <ConversationView result={result} onCorrectEvent={correctEvent} />
               ) : null}
               {activeTab === "timeline" ? (
                 <TimelineView result={result} />
@@ -619,7 +661,15 @@ function Workbench({
                 <DynamicsView result={result} />
               ) : null}
               {activeTab === "strategies" ? (
-                <StrategiesView result={result} />
+                <StrategiesView
+                  result={result}
+                  onSaveOutcome={(strategyId, input) =>
+                    saveOutcome(result.caseId, {
+                      strategyId,
+                      ...input
+                    }).then(() => undefined)
+                  }
+                />
               ) : null}
               {activeTab === "trace" ? <TraceView result={result} /> : null}
             </div>
@@ -651,7 +701,28 @@ function getEventGuidance(
   return "把抽象判断换成一个具体时刻、影响和可执行请求。";
 }
 
-function ConversationView({ result }: { result: AnalysisResult }) {
+function ConversationView({
+  result,
+  onCorrectEvent
+}: {
+  result: AnalysisResult;
+  onCorrectEvent: (
+    eventId: string,
+    correction: {
+      quote: string;
+      actor: "self" | "other" | "both" | "unknown";
+      timestamp: string | null;
+    }
+  ) => Promise<void>;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftQuote, setDraftQuote] = useState("");
+  const [draftActor, setDraftActor] =
+    useState<"self" | "other" | "both" | "unknown">("unknown");
+  const [draftTimestamp, setDraftTimestamp] = useState("");
+  const [savingCorrection, setSavingCorrection] = useState(false);
+  const [correctionError, setCorrectionError] = useState("");
+
   return (
     <div className="conversation-view">
       <div className="conversation-summary">
@@ -690,8 +761,94 @@ function ConversationView({ result }: { result: AnalysisResult }) {
               <div className="chat-meta">
                 <span>{side === "self" ? "我" : side === "other" ? "对方" : "未标明"}</span>
                 <span>{event.timestamp || `消息 ${index + 1}`}</span>
+                <button
+                  type="button"
+                  className="correction-trigger"
+                  onClick={() => {
+                    setEditingId(event.id);
+                    setDraftQuote(event.quote);
+                    setDraftActor(event.actor);
+                    setDraftTimestamp(event.timestamp || "");
+                    setCorrectionError("");
+                  }}
+                >
+                  修正
+                </button>
               </div>
-              <div className="chat-bubble">{event.quote}</div>
+              {editingId === event.id ? (
+                <div className="correction-editor">
+                  <textarea
+                    value={draftQuote}
+                    onChange={(changeEvent) =>
+                      setDraftQuote(changeEvent.target.value)
+                    }
+                  />
+                  <div className="correction-fields">
+                    <select
+                      value={draftActor}
+                      onChange={(changeEvent) =>
+                        setDraftActor(
+                          changeEvent.target.value as typeof draftActor
+                        )
+                      }
+                    >
+                      <option value="self">我</option>
+                      <option value="other">对方</option>
+                      <option value="both">双方</option>
+                      <option value="unknown">未标明</option>
+                    </select>
+                    <input
+                      value={draftTimestamp}
+                      onChange={(changeEvent) =>
+                        setDraftTimestamp(changeEvent.target.value)
+                      }
+                      placeholder="例如 21:10"
+                    />
+                  </div>
+                  {correctionError ? (
+                    <div className="correction-error">{correctionError}</div>
+                  ) : null}
+                  <div className="correction-actions">
+                    <button
+                      type="button"
+                      className="primary-button compact"
+                      disabled={savingCorrection || draftQuote.trim().length === 0}
+                      onClick={() => {
+                        setSavingCorrection(true);
+                        setCorrectionError("");
+                        void onCorrectEvent(event.id, {
+                          quote: draftQuote.trim(),
+                          actor: draftActor,
+                          timestamp: draftTimestamp.trim() || null
+                        })
+                          .then(() => setEditingId(null))
+                          .catch((error) =>
+                            setCorrectionError(
+                              error instanceof Error
+                                ? error.message
+                                : "保存修正失败。"
+                            )
+                          )
+                          .finally(() => setSavingCorrection(false));
+                      }}
+                    >
+                      {savingCorrection ? (
+                        <Loader2 className="spin" size={15} />
+                      ) : null}
+                      保存修正
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setEditingId(null)}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="chat-bubble">{event.quote}</div>
+              )}
 
               <div
                 className={`inline-ai-card ${
@@ -707,11 +864,13 @@ function ConversationView({ result }: { result: AnalysisResult }) {
                   <strong>AI 解读</strong>
                   <span>{urgency}</span>
                 </div>
-                <p className="inline-ai-summary">{event.summary}</p>
-                {need ? (
+                <p className="inline-ai-summary">
+                  {event.interpretation || event.summary}
+                </p>
+                {event.need || need ? (
                   <p className="inline-ai-need">
                     <span>可能的深层需求</span>
-                    {need.need}
+                    {event.need || need?.need}
                   </p>
                 ) : null}
                 <div className="tag-row">
@@ -724,7 +883,7 @@ function ConversationView({ result }: { result: AnalysisResult }) {
                 </div>
                 <div className="inline-ai-action">
                   <span>建议动作</span>
-                  <p>{getEventGuidance(event)}</p>
+                  <p>{event.recommendedAction || getEventGuidance(event)}</p>
                 </div>
               </div>
             </div>
@@ -843,7 +1002,16 @@ function DynamicsView({ result }: { result: AnalysisResult }) {
   );
 }
 
-function StrategiesView({ result }: { result: AnalysisResult }) {
+function StrategiesView({
+  result,
+  onSaveOutcome
+}: {
+  result: AnalysisResult;
+  onSaveOutcome: (
+    strategyId: string,
+    input: Omit<OutcomeRequest, "strategyId">
+  ) => Promise<void>;
+}) {
   return (
     <div className="strategy-list">
       {result.strategies.map((strategy, index) => (
@@ -882,8 +1050,144 @@ function StrategiesView({ result }: { result: AnalysisResult }) {
               <span key={quote}>{quote}</span>
             ))}
           </div>
+          <StrategyOutcomeForm
+            strategyId={strategy.id}
+            onSave={onSaveOutcome}
+          />
         </article>
       ))}
+    </div>
+  );
+}
+
+function StrategyOutcomeForm({
+  strategyId,
+  onSave
+}: {
+  strategyId: string;
+  onSave: (
+    strategyId: string,
+    input: Omit<OutcomeRequest, "strategyId">
+  ) => Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [adopted, setAdopted] = useState(true);
+  const [responseTone, setResponseTone] =
+    useState<OutcomeRequest["responseTone"]>("not_sent");
+  const [conflictChange, setConflictChange] =
+    useState<OutcomeRequest["conflictChange"]>("unknown");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!expanded) {
+    return (
+      <div className="outcome-summary">
+        {saved ? <span>结果已记录</span> : <span>实际使用后可以回填结果</span>}
+        <button type="button" onClick={() => setExpanded(true)}>
+          记录结果
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="outcome-form">
+      <div className="outcome-choice">
+        <span>是否采用</span>
+        <button
+          type="button"
+          className={adopted ? "active" : ""}
+          onClick={() => setAdopted(true)}
+        >
+          采用
+        </button>
+        <button
+          type="button"
+          className={!adopted ? "active" : ""}
+          onClick={() => setAdopted(false)}
+        >
+          未采用
+        </button>
+      </div>
+      <label>
+        <span>对方回应</span>
+        <select
+          value={responseTone}
+          onChange={(event) =>
+            setResponseTone(event.target.value as OutcomeRequest["responseTone"])
+          }
+        >
+          <option value="not_sent">还没有发送</option>
+          <option value="improved">有积极回应</option>
+          <option value="neutral">回应一般</option>
+          <option value="worsened">回应更差</option>
+          <option value="no_response">没有回应</option>
+        </select>
+      </label>
+      <label>
+        <span>冲突变化</span>
+        <select
+          value={conflictChange}
+          onChange={(event) =>
+            setConflictChange(
+              event.target.value as OutcomeRequest["conflictChange"]
+            )
+          }
+        >
+          <option value="unknown">不确定</option>
+          <option value="improved">有所缓和</option>
+          <option value="unchanged">没有变化</option>
+          <option value="worsened">进一步恶化</option>
+        </select>
+      </label>
+      <textarea
+        value={notes}
+        onChange={(event) => setNotes(event.target.value)}
+        placeholder="可选：记录实际发生了什么"
+        maxLength={1000}
+      />
+      {error ? <div className="correction-error">{error}</div> : null}
+      <div className="correction-actions">
+        <button
+          className="primary-button compact"
+          type="button"
+          disabled={saving}
+          onClick={() => {
+            setSaving(true);
+            setError("");
+            void onSave(strategyId, {
+              adopted,
+              responseTone,
+              conflictChange,
+              notes
+            })
+              .then(() => {
+                setSaved(true);
+                setExpanded(false);
+              })
+              .catch((saveError) =>
+                setError(
+                  saveError instanceof Error
+                    ? saveError.message
+                    : "保存结果失败。"
+                )
+              )
+              .finally(() => setSaving(false));
+          }}
+        >
+          {saving ? <Loader2 className="spin" size={15} /> : null}
+          保存结果
+        </button>
+        <button
+          className="secondary-button"
+          type="button"
+          onClick={() => setExpanded(false)}
+        >
+          取消
+        </button>
+      </div>
     </div>
   );
 }

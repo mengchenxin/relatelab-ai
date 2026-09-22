@@ -24,12 +24,20 @@ export const AnalysisRequestSchema = z
     relationshipType: RelationshipTypeSchema,
     transcript: z.string().trim().max(50_000).default(""),
     imageDataUrl: z.string().max(8_000_000).optional(),
+    imageDataUrls: z.array(z.string().max(8_000_000)).max(6).default([]),
     consentAccepted: z.boolean().default(false),
     consentVersion: z.string().max(40).default("2026-09-22")
   })
-  .refine((value) => value.transcript.length >= 10 || Boolean(value.imageDataUrl), {
-    message: "Provide at least 10 characters of conversation text or a screenshot."
-  });
+  .refine(
+    (value) =>
+      value.transcript.length >= 10 ||
+      Boolean(value.imageDataUrl) ||
+      value.imageDataUrls.length > 0,
+    {
+      message:
+        "Provide at least 10 characters of conversation text or a screenshot."
+    }
+  );
 
 export const RedactionReportSchema = z.object({
   originalCharacters: z.number().int().nonnegative(),
@@ -51,7 +59,11 @@ export const RelationshipEventSchema = z.object({
   quote: z.string(),
   emotions: z.array(z.string()),
   signal: z.string(),
-  severity: z.number().min(0).max(1)
+  severity: z.number().min(0).max(1),
+  interpretation: z.string().default(""),
+  need: z.string().default(""),
+  recommendedAction: z.string().default(""),
+  insightConfidence: z.number().min(0).max(1).default(0.5)
 });
 
 export const TimelineSchema = z.object({
@@ -131,6 +143,11 @@ export const AnalysisResultSchema = z.object({
   strategies: z.array(StrategySchema),
   trace: z.array(TraceStepSchema),
   warnings: z.array(z.string()),
+  versions: z.object({
+    prompt: z.string(),
+    schema: z.string(),
+    normalizer: z.string()
+  }),
   metrics: z.object({
     durationMs: z.number().nonnegative(),
     promptTokens: z.number().nonnegative(),
@@ -206,6 +223,37 @@ export const HealthSchema = z.object({
   timestamp: z.string()
 });
 
+export const OutcomeRequestSchema = z.object({
+  strategyId: z.string().min(1).max(80),
+  adopted: z.boolean(),
+  responseTone: z
+    .enum([
+      "not_sent",
+      "improved",
+      "neutral",
+      "worsened",
+      "no_response"
+    ])
+    .default("not_sent"),
+  conflictChange: z
+    .enum(["improved", "unchanged", "worsened", "unknown"])
+    .default("unknown"),
+  notes: z.string().trim().max(1_000).default("")
+});
+
+export const OutcomeSchema = OutcomeRequestSchema.extend({
+  id: z.string(),
+  caseId: z.string(),
+  runId: z.string(),
+  createdAt: z.string()
+});
+
+export const EventCorrectionSchema = z.object({
+  quote: z.string().trim().min(1).max(4_000),
+  actor: z.enum(["self", "other", "both", "unknown"]).default("unknown"),
+  timestamp: z.string().trim().max(80).nullable().default(null)
+});
+
 export type Goal = z.infer<typeof GoalSchema>;
 export type RelationshipType = z.infer<typeof RelationshipTypeSchema>;
 export type AnalysisRequest = z.infer<typeof AnalysisRequestSchema>;
@@ -219,3 +267,6 @@ export type TraceStep = z.infer<typeof TraceStepSchema>;
 export type AnalysisResult = z.infer<typeof AnalysisResultSchema>;
 export type CaseSummary = z.infer<typeof CaseSummarySchema>;
 export type EvaluationReport = z.infer<typeof EvaluationReportSchema>;
+export type OutcomeRequest = z.infer<typeof OutcomeRequestSchema>;
+export type Outcome = z.infer<typeof OutcomeSchema>;
+export type EventCorrection = z.infer<typeof EventCorrectionSchema>;

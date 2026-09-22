@@ -47,6 +47,7 @@ export async function runEvaluation(
       goal: item.goal,
       relationshipType: item.relationshipType,
       transcript: item.transcript,
+      imageDataUrls: [],
       consentAccepted: true,
       consentVersion: "2026-09-22"
     };

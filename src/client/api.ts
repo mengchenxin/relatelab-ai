@@ -2,7 +2,10 @@ import type {
   AnalysisRequest,
   AnalysisResult,
   CaseSummary,
-  EvaluationReport
+  EvaluationReport,
+  EventCorrection,
+  Outcome,
+  OutcomeRequest
 } from "../shared/contracts.ts";
 
 interface HealthResponse {
@@ -111,6 +114,40 @@ export function deleteAllData(): Promise<{
       method: "DELETE"
     }
   );
+}
+
+export function correctCaseEvent(
+  caseId: string,
+  eventId: string,
+  correction: EventCorrection
+): Promise<AnalysisResult> {
+  return request<AnalysisResult>(
+    `/api/cases/${encodeURIComponent(caseId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(correction)
+    }
+  );
+}
+
+export function saveOutcome(
+  caseId: string,
+  input: OutcomeRequest
+): Promise<Outcome> {
+  return request<Outcome>(
+    `/api/cases/${encodeURIComponent(caseId)}/outcomes`,
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    }
+  );
+}
+
+export async function getOutcomes(caseId: string): Promise<Outcome[]> {
+  const response = await request<{ outcomes: Outcome[] }>(
+    `/api/cases/${encodeURIComponent(caseId)}/outcomes`
+  );
+  return response.outcomes;
 }
 
 export function analyzeCase(

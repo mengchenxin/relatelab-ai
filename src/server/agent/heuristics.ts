@@ -98,7 +98,14 @@ export function parseTimeline(rawTranscript: string): Timeline {
       quote,
       emotions: detectEmotions(quote),
       signal: detectSignal(quote),
-      severity: lineSeverity(quote)
+      severity: lineSeverity(quote),
+      interpretation: `${actor === "self" ? "用户" : actor === "other" ? "对方" : "消息发送者"}通过这句话传递了${detectEmotions(quote).join("、")}信号`,
+      need: "希望自己的感受或诉求被看见",
+      recommendedAction:
+        actor === "other"
+          ? "先复述你理解到的内容，再询问对方最希望改变的具体行为。"
+          : "补充一个具体时刻、影响和可执行请求。",
+      insightConfidence: 0.62
     };
   });
 

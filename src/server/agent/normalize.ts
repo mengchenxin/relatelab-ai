@@ -91,6 +91,40 @@ export function normalizeTimeline(input: unknown): Timeline {
       severity: Math.max(
         0,
         Math.min(1, asNumber(event.severity, 0.2))
+      ),
+      interpretation: asString(
+        firstValue(event, [
+          "interpretation",
+          "meaning",
+          "subtext",
+          "analysis"
+        ]),
+        asString(
+          firstValue(event, ["summary", "description", "meaning"]),
+          "模型未提供进一步解读"
+        )
+      ),
+      need: asString(
+        firstValue(event, ["need", "underlyingNeed", "emotionalNeed"]),
+        "模型未明确识别需求"
+      ),
+      recommendedAction: asString(
+        firstValue(event, [
+          "recommendedAction",
+          "action",
+          "suggestedAction"
+        ]),
+        "先确认信息，再决定如何回应。"
+      ),
+      insightConfidence: Math.max(
+        0,
+        Math.min(
+          1,
+          asNumber(
+            firstValue(event, ["insightConfidence", "confidence", "score"]),
+            0.5
+          )
+        )
       )
     };
   });

@@ -31,6 +31,7 @@ test("runs the complete offline pipeline and persists a trace", async () => {
     relationshipType: "partner",
     transcript:
       "我 20:00 你今天又没提前说。\n对方 20:01 我在忙。\n我 20:02 你每次都这样。\n对方 20:03 算了。",
+    imageDataUrls: [],
     consentAccepted: true,
     consentVersion: "2026-09-22"
   }, { ownerId });

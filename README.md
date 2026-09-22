@@ -11,9 +11,11 @@ RelateLab 是一个面向真实人际关系问题的 AI 工程工作台。
 ## 核心功能
 
 - 聊天截图直接输入，无需手工填写对话记录
+- 支持一次上传最多 6 张截图，并按顺序重建聊天记录
 - 使用 `deepseek-flash` 视觉能力识别截图内容
 - 按左右聊天气泡重建聊天记录
-- 每条消息下方显示 AI 解读、情绪、需求和行动建议
+- 每条消息下方显示 AI 解读、情绪、需求、行动建议和置信度
+- 用户可以直接修正识别错误的文字、说话人和时间
 - 分析要求与撤退、指责与防御等关系互动模式
 - 生成三种沟通策略，并说明适用条件、风险和证据
 - 对自伤、威胁、暴力、控制性表达进行安全分级
@@ -25,6 +27,8 @@ RelateLab 是一个面向真实人际关系问题的 AI 工程工作台。
 - 支持隐私同意、数据保留期限、一键删除全部数据和单个案例删除
 - 对分析请求限流，并校验截图 MIME、文件签名和大小
 - 支持 SQLite 本地开发与 PostgreSQL 生产持久化
+- 支持回填策略是否采用、对方回应、冲突变化和备注，形成结果闭环
+- 记录 Prompt、Schema 和 Provider 归一化版本
 
 ## 整体流程
 
@@ -114,7 +118,7 @@ npm run build
 npm run check
 ```
 
-当前包含 13 个测试，覆盖：
+当前包含 14 个测试，覆盖：
 
 - 案例运行、列表、历史加载和删除
 - BYOK 缺失用户 Key 时拒绝分析
@@ -127,6 +131,9 @@ npm run check
 - 不同会话之间的案例隔离
 - 截图格式与文件签名校验
 - 分析请求限流
+- 多截图输入
+- 消息识别纠错
+- 策略结果回填
 
 ## API
 
@@ -134,7 +141,10 @@ npm run check
 - `POST /api/analyze`
 - `GET /api/cases`
 - `GET /api/cases/:id`
+- `PATCH /api/cases/:caseId/events/:eventId`
 - `DELETE /api/cases/:id`
+- `POST /api/cases/:caseId/outcomes`
+- `GET /api/cases/:caseId/outcomes`
 - `GET /api/runs/:id`
 - `POST /api/evals/run`
 - `GET /api/evals/latest`

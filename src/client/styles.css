@@ -541,6 +541,54 @@ textarea:focus-visible {
   height: auto;
 }
 
+.upload-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.upload-preview-grid figure {
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef2f1;
+}
+
+.upload-preview-grid img {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+.upload-preview-grid figcaption {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.upload-preview-grid figcaption span,
+.upload-preview-grid figcaption button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 6px;
+  color: #ffffff;
+  background: rgba(23, 33, 30, 0.72);
+  font-size: 10px;
+}
+
+.upload-preview-grid figcaption button {
+  cursor: pointer;
+}
+
 .pipeline-note {
   display: flex;
   align-items: center;
@@ -848,6 +896,62 @@ textarea:focus-visible {
 
 .chat-row.self .chat-meta {
   justify-content: flex-end;
+}
+
+.correction-trigger {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+  font-size: 9px;
+  text-decoration: underline;
+}
+
+.correction-editor {
+  display: grid;
+  width: min(100%, 620px);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #9fc8bc;
+  border-radius: 8px;
+  background: #f0f8f5;
+}
+
+.correction-editor textarea {
+  min-height: 82px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  resize: vertical;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.correction-fields {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.correction-fields select,
+.correction-fields input {
+  height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  font-size: 11px;
+}
+
+.correction-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.correction-error {
+  color: #9f1735;
+  font-size: 10px;
 }
 
 .chat-bubble {
@@ -1312,6 +1416,88 @@ textarea:focus-visible {
   color: #4c5955;
   background: #f2f4f3;
   font-size: 10px;
+}
+
+.outcome-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.outcome-summary button {
+  border: 0;
+  color: var(--accent-strong);
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.outcome-form {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #cfe1dc;
+  border-radius: 8px;
+  background: #f5faf8;
+}
+
+.outcome-choice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.outcome-choice button {
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.outcome-choice button.active {
+  border-color: var(--accent);
+  color: #ffffff;
+  background: var(--accent-strong);
+}
+
+.outcome-form > label {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.outcome-form select,
+.outcome-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #ffffff;
+  font-size: 11px;
+}
+
+.outcome-form select {
+  height: 34px;
+  padding: 0 9px;
+}
+
+.outcome-form textarea {
+  min-height: 70px;
+  padding: 9px;
+  resize: vertical;
 }
 
 .trace-wrap {
